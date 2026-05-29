@@ -1247,18 +1247,18 @@ const App = {
 
   // --- MAIN ANIMATION & RENDERING LOOP ---
   animate() {
-    requestAnimationFrame(() => this.animate());
+    // Persist lastTime on the graphics instance, avoiding reset to zero every single frame
+    this.graphics.lastTime = performance.now();
 
-    const clock = new THREE.Clock();
-    let lastTime = performance.now();
+    const renderLoop = () => {
+      requestAnimationFrame(renderLoop);
 
-    const renderStep = () => {
       const time = performance.now();
-      const deltaTime = Math.min((time - lastTime) / 1000, 0.1); // Cap to avoid massive skips
-      lastTime = time;
+      // Calculate true elapsed time since last frame, capped at 100ms
+      const deltaTime = Math.min((time - this.graphics.lastTime) / 1000, 0.1);
+      this.graphics.lastTime = time;
 
       // 1. Rotate active propeller according to RPM
-      // Angular velocity = (RPM * 2 * PI) / 60 radians per second
       const rotSpeed = (this.state.rpm * 2 * Math.PI) / 60;
       if (this.graphics.activePropGroup) {
         this.graphics.activePropGroup.rotation.z += rotSpeed * deltaTime;
@@ -1275,8 +1275,7 @@ const App = {
       this.drawSoundWave();
     };
 
-    // Call inner render step inside loop
-    renderStep();
+    renderLoop();
   }
 };
 
