@@ -281,8 +281,8 @@ const App = {
       let fetchUrl = url;
       const driveIdMatch = url.match(/[-\w]{25,}/);
       if (driveIdMatch && url.includes('drive.google.com')) {
-        // Convert to a CORS-friendly direct download URL
-        fetchUrl = `https://docs.google.com/uc?export=download&id=${driveIdMatch[0]}&confirm=t`;
+        // Convert to direct usercontent download URL to completely bypass docs.google.com CORS redirect blocking in browsers
+        fetchUrl = `https://drive.usercontent.google.com/download?id=${driveIdMatch[0]}&export=download`;
       }
 
       try {
