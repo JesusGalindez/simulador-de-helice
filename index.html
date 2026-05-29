@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Simulación interactiva en 3D de eficiencia aerodinámica, empuje, velocidad y ruido acústico de una hélice toroidal en comparación con una hélice estándar.">
+  <title>Simulador de Eficiencia de Hélice Toroidal 3D - Laboratorio Aerodinámico</title>
+  <link rel="stylesheet" href="index.css">
+</head>
+<body>
+
+  <!-- Three.js 3D Viewport -->
+  <div id="canvas-container"></div>
+
+  <!-- Interactive Help Tooltip Overlay -->
+  <div class="view-helper-hint">
+    <div class="hint-icon"></div>
+    <span>Arrastra para rotar la cámara 3D • Scroll para zoom</span>
+  </div>
+
+  <!-- Immersive Floating Dashboard UI -->
+  <div id="dashboard-ui">
+    
+    <!-- HEADER -->
+    <header class="interactive">
+      <div class="logo-section">
+        <div class="logo-icon">∞</div>
+        <h1>TOROIDAL PROP LAB</h1>
+      </div>
+      
+      <!-- Toggle Hélice -->
+      <div class="propeller-selector">
+        <button class="selector-btn active" data-type="toroidal">
+          <span style="font-size: 1.1rem;">∞</span> Toroidal (Sharrow)
+        </button>
+        <button class="selector-btn" data-type="standard">
+          <span style="font-size: 1.1rem;">✈</span> Estándar (2-Palas)
+        </button>
+      </div>
+    </header>
+
+    <!-- LEFT SIDEBAR: CONTROLS -->
+    <aside class="control-sidebar interactive">
+      
+      <div class="control-group">
+        <h2 class="panel-section-title">Parámetros Operativos</h2>
+        <div class="control-label-row">
+          <span>Velocidad de Rotación</span>
+          <span id="rpm-val" class="control-value">3200 RPM</span>
+        </div>
+        <input type="range" id="rpm-slider" min="1000" max="8000" step="50" value="3200">
+      </div>
+
+      <div class="control-group">
+        <div class="control-label-row">
+          <span>Ángulo de Paso (Pitch)</span>
+          <span id="pitch-val" class="control-value">25°</span>
+        </div>
+        <input type="range" id="pitch-slider" min="10" max="45" step="1" value="25">
+      </div>
+
+      <div class="control-group">
+        <div class="control-label-row">
+          <span>Velocidad de Avance (Inflow)</span>
+          <span id="inflow-val" class="control-value">4.5 m/s</span>
+        </div>
+        <input type="range" id="inflow-slider" min="0" max="15" step="0.1" value="4.5">
+      </div>
+
+      <div class="control-group">
+        <h2 class="panel-section-title">Medio de Interacción</h2>
+        <div class="fluid-switch">
+          <div class="switch-option active" data-fluid="air">Aire (Drones/Fans)</div>
+          <div class="switch-option" data-fluid="water">Agua (Marino)</div>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <h2 class="panel-section-title">Cámara & Visualización</h2>
+        <div class="preset-grid">
+          <button class="btn-secondary active" id="view-persp">Perspectiva</button>
+          <button class="btn-secondary" id="view-front">Frente (Eje Y)</button>
+          <button class="btn-secondary" id="view-side">Perfil (Eje X)</button>
+          <button class="btn-secondary active" id="toggle-flow">Visualizar Flujo</button>
+        </div>
+      </div>
+
+      <div class="control-group" style="margin-top: auto; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.05);">
+        <h2 class="panel-section-title">Efecto Toroidal</h2>
+        <p style="font-size: 0.78rem; line-height: 1.4; color: var(--color-text-secondary);">
+          Las hélices toroidales forman un bucle cerrado continuo. Al eliminar el extremo libre de las palas tradicionales, reducen drásticamente la creación de vórtices de punta, causantes de la mayor parte del arrastre y el zumbido de alta frecuencia.
+        </p>
+      </div>
+
+    </aside>
+
+    <!-- RIGHT SIDEBAR: METRICS & TELEMETRY -->
+    <aside class="telemetry-sidebar interactive">
+      
+      <!-- Comparison Banner -->
+      <div class="comparison-banner">
+        <div class="comparison-text">
+          Eficiencia: <span id="comp-eff">+26.4% vs Estándar</span>
+        </div>
+        <div class="comparison-badge" id="comp-badge">ÓPTIMO</div>
+      </div>
+
+      <!-- Real-time metrics grid -->
+      <div class="metric-grid">
+        <div class="metric-card">
+          <span class="metric-title">Empuje Generado</span>
+          <div class="metric-value-row">
+            <span class="metric-value" id="val-thrust">24.8</span>
+            <span class="metric-unit">N</span>
+          </div>
+        </div>
+        
+        <div class="metric-card">
+          <span class="metric-title">Potencia Requerida</span>
+          <div class="metric-value-row">
+            <span class="metric-value" id="val-power">142</span>
+            <span class="metric-unit">W</span>
+          </div>
+        </div>
+
+        <div class="metric-card efficiency">
+          <span class="metric-title">Eficiencia Total</span>
+          <div class="metric-value-row">
+            <span class="metric-value" id="val-efficiency" style="color: var(--accent-efficiency);">78.2</span>
+            <span class="metric-unit" style="color: var(--accent-efficiency);">%</span>
+          </div>
+        </div>
+
+        <div class="metric-card">
+          <span class="metric-title">Momento (Torque)</span>
+          <div class="metric-value-row">
+            <span class="metric-value" id="val-torque">0.42</span>
+            <span class="metric-unit">N·m</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Advanced Efficiency Chart -->
+      <div class="chart-panel">
+        <div class="chart-title-row">
+          <span>Curva de Eficiencia (η vs J)</span>
+          <span style="color: var(--accent-efficiency); font-family: var(--font-mono);" id="current-j">J = 0.42</span>
+        </div>
+        <div class="chart-canvas-wrapper">
+          <canvas id="chartCanvas"></canvas>
+        </div>
+      </div>
+
+      <!-- Operational details table -->
+      <div class="details-panel">
+        <h2 class="panel-section-title">Análisis de Operación</h2>
+        <div class="detail-row">
+          <span>Coeficiente de Avance (J)</span>
+          <span id="detail-j">0.422</span>
+        </div>
+        <div class="detail-row">
+          <span>Número de Reynolds</span>
+          <span id="detail-re">4.82 x 10⁵</span>
+        </div>
+        <div class="detail-row">
+          <span>Régimen del Flujo</span>
+          <span id="detail-regime" style="color: var(--accent-efficiency);">Laminar Estable</span>
+        </div>
+        <div class="detail-row">
+          <span>Ahorro Energético Est.</span>
+          <span id="detail-savings" style="color: var(--accent-efficiency); font-weight: 700;">21.6%</span>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- CENTER BOTTOM: DYNAMIC NOISE WAVEFORM -->
+    <div class="center-bottom-overlay">
+      
+      <!-- Sound module -->
+      <div class="sound-module interactive">
+        <div class="sound-meta">
+          <span class="sound-title">Ruido Acústico</span>
+          <div class="sound-db-readout">
+            <span class="sound-db-value" id="val-db">48.2</span>
+            <span class="sound-unit" style="font-size: 0.8rem; color: var(--color-text-muted); font-weight: 600;">dBA</span>
+          </div>
+        </div>
+        
+        <canvas class="sound-waveform-canvas" id="soundCanvas"></canvas>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- External Library Dependencies -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  
+  <!-- Main Application Logic -->
+  <script src="app.js"></script>
+</body>
+</html>

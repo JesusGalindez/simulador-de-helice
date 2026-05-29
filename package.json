@@ -1,0 +1,21 @@
+{
+  "name": "toroidal-propeller-simulation",
+  "version": "1.0.0",
+  "description": "Simulador interactivo en 3D de eficiencia aerodinámica, física y acústica de hélices toroidales.",
+  "scripts": {
+    "dev": "npx -y http-server . -p 3000 -o"
+  },
+  "keywords": [
+    "threejs",
+    "simulation",
+    "physics",
+    "toroidal-propeller",
+    "aerodynamics"
+  ],
+  "author": "Antigravity",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  }
+}
