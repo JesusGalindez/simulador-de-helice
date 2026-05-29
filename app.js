@@ -69,6 +69,15 @@ const App = {
     
     // Trigger initial window resize to fit canvas
     window.dispatchEvent(new Event('resize'));
+
+    // Autoload default Google Drive CFD dataset after a brief render delay
+    setTimeout(() => {
+      const gdriveInput = document.getElementById('gdrive-url');
+      const btnLoadCFD = document.getElementById('btn-load-cfd');
+      if (gdriveInput && gdriveInput.value.trim() && btnLoadCFD) {
+        btnLoadCFD.click();
+      }
+    }, 600);
   },
 
   initThree() {
