@@ -903,10 +903,15 @@ const App = {
     const geo = new THREE.BufferGeometry();
     const count = this.graphics.particleCount;
     
+    // Core physical simulation buffers
     this.graphics.particlePositions = new Float32Array(count * 3);
     this.graphics.particleVelocities = new Float32Array(count * 3);
     this.graphics.particleColors = new Float32Array(count * 3);
     this.graphics.particleAges = new Float32Array(count);
+
+    // Three.js LineSegments rendering buffers (Double size: start and end of each wind line segment)
+    this.graphics.linePositions = new Float32Array(count * 2 * 3);
+    this.graphics.lineColors = new Float32Array(count * 2 * 3);
 
     // Initialize particles uniformly in a cylinder before the propeller
     for (let i = 0; i < count; i++) {
@@ -915,21 +920,66 @@ const App = {
       this.graphics.particlePositions[i * 3 + 2] = -0.5 + Math.random() * 1.5;
     }
 
-    geo.setAttribute('position', new THREE.BufferAttribute(this.graphics.particlePositions, 3));
-    geo.setAttribute('color', new THREE.BufferAttribute(this.graphics.particleColors, 3));
+    geo.setAttribute('position', new THREE.BufferAttribute(this.graphics.linePositions, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(this.graphics.lineColors, 3));
 
-    // Glowy, smooth dot texture (Slightly larger particle size to maintain visual density with fewer particles)
-    const pMaterial = new THREE.PointsMaterial({
-      size: 0.013,
+    // Sleek glowing line basic material for high-tech aerodynamic streamlines
+    const lineMaterial = new THREE.LineBasicMaterial({
       vertexColors: true,
       transparent: true,
-      opacity: 0.75,
+      opacity: 0.8,
       blending: THREE.AdditiveBlending,
+      linewidth: 1.5,
       depthWrite: false
     });
 
-    this.graphics.particles = new THREE.Points(geo, pMaterial);
+    this.graphics.particles = new THREE.LineSegments(geo, lineMaterial);
     this.graphics.scene.add(this.graphics.particles);
+  },
+
+  drawWindLines() {
+    const count = this.graphics.particleCount;
+    const pPos = this.graphics.particlePositions;
+    const pVel = this.graphics.particleVelocities;
+    const pCol = this.graphics.particleColors;
+    
+    const linePos = this.graphics.linePositions;
+    const lineCol = this.graphics.lineColors;
+
+    // Trail length corresponds to 15 milliseconds of fluid travel
+    const trailLength = 0.015;
+
+    for (let i = 0; i < count; i++) {
+      const i3 = i * 3;
+      const i6 = i * 6;
+
+      // Start of the wind line (current particle position)
+      linePos[i6] = pPos[i3];
+      linePos[i6 + 1] = pPos[i3 + 1];
+      linePos[i6 + 2] = pPos[i3 + 2];
+
+      // End of the wind line (trail pointing backwards along the velocity vector)
+      const vx = pVel[i3];
+      const vy = pVel[i3 + 1];
+      const vz = pVel[i3 + 2];
+
+      linePos[i6 + 3] = pPos[i3] - vx * trailLength;
+      linePos[i6 + 4] = pPos[i3 + 1] - vy * trailLength;
+      linePos[i6 + 5] = pPos[i3 + 2] - vz * trailLength;
+
+      // Start color (fully saturated cian/orange)
+      lineCol[i6] = pCol[i3];
+      lineCol[i6 + 1] = pCol[i3 + 1];
+      lineCol[i6 + 2] = pCol[i3 + 2];
+
+      // End color (faded out to 15% opacity to create a premium streak/comet tail effect)
+      lineCol[i6 + 3] = pCol[i3] * 0.15;
+      lineCol[i6 + 4] = pCol[i3 + 1] * 0.15;
+      lineCol[i6 + 5] = pCol[i3 + 2] * 0.15;
+    }
+
+    this.graphics.particles.geometry.attributes.position.needsUpdate = true;
+    this.graphics.particles.geometry.attributes.color.needsUpdate = true;
   },
 
   resetParticle(index) {
@@ -998,12 +1048,13 @@ const App = {
     if (!this.state.visualizeFlow) return;
 
     const count = this.graphics.particleCount;
-    const positions = this.graphics.particles.geometry.attributes.position.array;
-    const colors = this.graphics.particles.geometry.attributes.color.array;
+    const positions = this.graphics.particlePositions;
+    const colors = this.graphics.particleColors;
 
     // Direct GPU CFD rendering route for Phase 3 (Method B)
     if (this.state.useCFD && this.state.cfdData) {
       this.updateCFDParticles(deltaTime, positions, colors);
+      this.drawWindLines();
       return;
     }
     
@@ -1201,11 +1252,7 @@ const App = {
       }
     }
 
-    this.graphics.particles.geometry.attributes.position.needsUpdate = true;
-    this.graphics.particles.geometry.attributes.color.needsUpdate = true;
-
-    this.graphics.particles.geometry.attributes.position.needsUpdate = true;
-    this.graphics.particles.geometry.attributes.color.needsUpdate = true;
+    this.drawWindLines();
   },
 
   // HIGH PERFORMANCE CFD DATA PARTICLE RENDERER (Method B)
@@ -1236,10 +1283,12 @@ const App = {
       colors[i3] = 0.0;
       colors[i3 + 1] = 0.82 + (Math.abs(cfd.vx) * 0.15); // Dynamic flow shading
       colors[i3 + 2] = 1.0;
-    }
 
-    this.graphics.particles.geometry.attributes.position.needsUpdate = true;
-    this.graphics.particles.geometry.attributes.color.needsUpdate = true;
+      // Populate velocities so wind lines render correctly
+      this.graphics.particleVelocities[i3] = cfd.vx * timeFactor;
+      this.graphics.particleVelocities[i3 + 1] = cfd.vy * timeFactor;
+      this.graphics.particleVelocities[i3 + 2] = cfd.vz * timeFactor;
+    }
   },
 
   // --- PHYSICS ENGINE CALCULATIONS ---
