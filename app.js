@@ -573,6 +573,107 @@ const App = {
     }
   },
 
+  createDimensionRing() {
+    const radius = 0.125; // default diameter 0.25m / 2
+    const segments = 64;
+    const geometry = new THREE.RingGeometry(radius - 0.002, radius + 0.002, segments);
+    const material = new THREE.MeshBasicMaterial({
+      color: this.state.propType === 'toroidal' ? 0x00f0ff : 0xff5500,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.6
+    });
+    this.graphics.dimensionRing = new THREE.Mesh(geometry, material);
+    this.graphics.dimensionRing.position.set(0, 0, 0);
+    this.graphics.scene.add(this.graphics.dimensionRing);
+  },
+
+  updateObstacleMesh() {
+    // Clear previous obstacle
+    if (this.graphics.obstacleMesh) {
+      this.graphics.obstacleGroup.remove(this.graphics.obstacleMesh);
+      this.graphics.obstacleMesh = null;
+    }
+
+    const type = this.state.obstacleType;
+    if (type === 'none') {
+      document.getElementById('detail-obstacle').innerText = 'Ninguno';
+      return;
+    }
+
+    let geometry;
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xef4444,
+      metalness: 0.8,
+      roughness: 0.2,
+      transparent: true,
+      opacity: 0.85
+    });
+
+    if (type === 'sphere') {
+      document.getElementById('detail-obstacle').innerText = 'Esfera';
+      geometry = new THREE.SphereGeometry(0.04, 32, 32);
+    } else if (type === 'airfoil') {
+      document.getElementById('detail-obstacle').innerText = 'Perfil';
+      geometry = new THREE.SphereGeometry(0.04, 32, 32);
+      geometry.scale(0.5, 1.0, 2.0); // Elongate along Z (flow) and compress along X
+      material.color.setHex(0x10b981); // Green for efficient airfoil
+    } else if (type === 'custom') {
+      document.getElementById('detail-obstacle').innerText = 'STL Personalizado';
+      if (this.graphics.customStlGeometry) {
+        geometry = this.graphics.customStlGeometry;
+        material.color.setHex(0xa855f7); // Purple for custom STL
+      } else {
+        // No custom geometry loaded yet, show a temporary wireframe box
+        geometry = new THREE.BoxGeometry(0.04, 0.04, 0.04);
+        material.color.setHex(0x64748b);
+        material.wireframe = true;
+      }
+    }
+
+    if (geometry) {
+      this.graphics.obstacleMesh = new THREE.Mesh(geometry, material);
+      this.graphics.obstacleMesh.position.set(0, 0, 0.35); // 35cm downstream
+      this.graphics.obstacleGroup.add(this.graphics.obstacleMesh);
+    }
+  },
+
+  loadCustomSTL(geometry, name) {
+    geometry.center();
+    geometry.computeVertexNormals();
+    geometry.computeBoundingBox();
+    
+    const size = new THREE.Vector3();
+    geometry.boundingBox.getSize(size);
+    const maxDim = Math.max(size.x, size.y, size.z);
+    const targetDim = 0.08; // target 8cm size
+    const scaleFactor = targetDim / maxDim;
+    geometry.scale(scaleFactor, scaleFactor, scaleFactor);
+
+    this.graphics.customStlGeometry = geometry;
+    
+    // Auto-activate custom obstacle in the UI selector
+    const obstacleOptions = document.querySelectorAll('[data-obstacle]');
+    obstacleOptions.forEach(opt => {
+      if (opt.dataset.obstacle === 'custom') {
+        opt.classList.add('active');
+      } else {
+        opt.classList.remove('active');
+      }
+    });
+
+    this.state.obstacleType = 'custom';
+    
+    // Show STL buttons
+    document.getElementById('btn-upload-stl').style.display = 'block';
+    document.getElementById('stl-file-name').style.display = 'block';
+    document.getElementById('stl-file-name').innerText = name;
+    document.getElementById('stl-file-name').style.color = 'var(--accent-efficiency)';
+
+    this.updateObstacleMesh();
+    this.updatePhysics();
+  },
+
   // MATHEMATICAL GEOMETRY: TOROIDAL LOOP (FIGURE-8 RIBBON)
   generateToroidalMesh(maxR, hubR, pitch, material) {
     const geom = new THREE.BufferGeometry();
