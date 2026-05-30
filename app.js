@@ -57,7 +57,6 @@ const App = {
     obstacleMesh: null,
     obstacleGroup: null
   },
-  },
 
   // --- INTERACTIVE CANVASES ---
   canvases: {
