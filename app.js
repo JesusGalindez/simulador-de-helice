@@ -19,7 +19,12 @@ const App = {
 
     // Google Colab GPU simulation data (Method B)
     useCFD: false,
-    cfdData: null
+    cfdData: null,
+
+    // Phase 4: Dynamic scale & custom 3D wind tunnel obstacles
+    obstacleType: 'none', // 'none', 'sphere', 'airfoil', 'custom'
+    dragCd: 0.0,
+    dragFd: 0.0
   },
 
   // --- THREE.JS GRAPHICS OBJECTS ---
@@ -46,6 +51,12 @@ const App = {
     particleVelocities: null,
     particleColors: null,
     particleAges: null,
+
+    // Phase 4 Graphics
+    dimensionRing: null,
+    obstacleMesh: null,
+    obstacleGroup: null
+  },
   },
 
   // --- INTERACTIVE CANVASES ---
@@ -59,11 +70,17 @@ const App = {
 
   // --- INITIALIZATION ---
   init() {
+    // Dynamically load Three.js STLLoader from a stable CDN
+    const loaderScript = document.createElement('script');
+    loaderScript.src = 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js';
+    document.head.appendChild(loaderScript);
+
     this.initThree();
     this.initCanvases();
     this.bindEvents();
     this.createPropellers();
     this.createFlowParticles();
+    this.createDimensionRing();
     this.updatePhysics();
     this.animate();
     
@@ -137,6 +154,10 @@ const App = {
     const activeGroup = new THREE.Group();
     this.graphics.activePropGroup = activeGroup;
     this.graphics.scene.add(activeGroup);
+
+    // Obstacle Group
+    this.graphics.obstacleGroup = new THREE.Group();
+    this.graphics.scene.add(this.graphics.obstacleGroup);
   },
 
   initCanvases() {
@@ -183,6 +204,24 @@ const App = {
       this.updatePhysics();
     });
 
+    // Propeller Diameter Slider (Phase 4)
+    const diameterSlider = document.getElementById('diameter-slider');
+    diameterSlider.addEventListener('input', (e) => {
+      this.state.diameter = parseFloat(e.target.value);
+      document.getElementById('diameter-val').innerText = `${this.state.diameter.toFixed(2)} m`;
+      
+      // Update visual 3D scale (Propeller is originally designed with D = 0.25m)
+      const visualScale = this.state.diameter / 0.25;
+      this.graphics.activePropGroup.scale.set(visualScale, visualScale, visualScale);
+      
+      // Scale dimension ring
+      if (this.graphics.dimensionRing) {
+        this.graphics.dimensionRing.scale.set(visualScale, visualScale, visualScale);
+      }
+      
+      this.updatePhysics();
+    });
+
     // Propeller Switcher (Toroidal vs Standard)
     const selectorBtns = document.querySelectorAll('.selector-btn');
     selectorBtns.forEach(btn => {
@@ -203,6 +242,7 @@ const App = {
           root.style.setProperty('--border-glow-active', 'var(--border-glow-toroidal)');
           document.querySelector('header h1').style.background = 'linear-gradient(90deg, #ffffff 40%, var(--accent-toroidal) 100%)';
           document.querySelector('header h1').style.webkitBackgroundClip = 'text';
+          if (this.graphics.dimensionRing) this.graphics.dimensionRing.material.color.setHex(0x00f0ff);
         } else {
           root.style.setProperty('--accent-active', 'var(--accent-standard)');
           root.style.setProperty('--accent-active-rgb', 'var(--accent-standard-rgb)');
@@ -210,10 +250,75 @@ const App = {
           root.style.setProperty('--border-glow-active', 'var(--border-glow-standard)');
           document.querySelector('header h1').style.background = 'linear-gradient(90deg, #ffffff 40%, var(--accent-standard) 100%)';
           document.querySelector('header h1').style.webkitBackgroundClip = 'text';
+          if (this.graphics.dimensionRing) this.graphics.dimensionRing.material.color.setHex(0xff5500);
         }
+        
+        // Sync 3D scale on newly loaded mesh
+        const visualScale = this.state.diameter / 0.25;
+        this.graphics.activePropGroup.scale.set(visualScale, visualScale, visualScale);
         
         this.updatePhysics();
       });
+    });
+
+    // Wind Tunnel Obstacle Switches (Phase 4)
+    const obstacleOptions = document.querySelectorAll('[data-obstacle]');
+    const btnUploadStl = document.getElementById('btn-upload-stl');
+    const stlInput = document.getElementById('stl-file-input');
+    const stlFileName = document.getElementById('stl-file-name');
+
+    obstacleOptions.forEach(opt => {
+      opt.addEventListener('click', (e) => {
+        obstacleOptions.forEach(o => o.classList.remove('active'));
+        opt.classList.add('active');
+        
+        this.state.obstacleType = opt.dataset.obstacle;
+        
+        // Show/hide STL upload button
+        if (this.state.obstacleType === 'custom') {
+          btnUploadStl.style.display = 'block';
+          stlFileName.style.display = 'block';
+        } else {
+          btnUploadStl.style.display = 'none';
+          stlFileName.style.display = 'none';
+        }
+        
+        this.updateObstacleMesh();
+        this.updatePhysics();
+      });
+    });
+
+    btnUploadStl.addEventListener('click', () => stlInput.click());
+
+    stlInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      stlFileName.innerText = file.name;
+      stlFileName.style.color = 'var(--accent-efficiency)';
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const contents = event.target.result;
+        
+        // Verify STLLoader is loaded
+        if (typeof THREE.STLLoader === 'undefined') {
+          alert('El cargador de archivos 3D aún se está descargando del CDN. Por favor, reintenta en un segundo.');
+          return;
+        }
+
+        try {
+          const loader = new THREE.STLLoader();
+          const geometry = loader.parse(contents);
+          
+          this.loadCustomSTL(geometry, file.name);
+        } catch (err) {
+          console.error(err);
+          alert('Error al parsear el archivo STL. Asegúrate de que el formato sea correcto.');
+        }
+      };
+      
+      reader.readAsArrayBuffer(file);
     });
 
     // Fluid Switcher
@@ -755,6 +860,40 @@ const App = {
     this.graphics.particleAges[index] = 0;
   },
 
+  // HIGH PERFORMANCE CFD DATA PARTICLE RENDERER (Method B)
+  updateCFDParticles(deltaTime, positions, colors) {
+    const count = this.graphics.particleCount;
+    const particles = this.state.cfdData.particles;
+    
+    // Animate flow speed factor
+    const timeFactor = 1.3;
+
+    for (let i = 0; i < count; i++) {
+      const i3 = i * 3;
+      const cfd = particles[i % particles.length];
+      
+      // Update coordinates utilizing the GPU computed vectors from Google Colab
+      positions[i3] += cfd.vx * deltaTime * timeFactor;
+      positions[i3 + 1] += cfd.vy * deltaTime * timeFactor;
+      positions[i3 + 2] += cfd.vz * deltaTime * timeFactor;
+
+      // Wrap-around boundary loop when downstream past threshold
+      if (positions[i3 + 2] > 0.9) {
+        positions[i3] = cfd.x;
+        positions[i3 + 1] = cfd.y;
+        positions[i3 + 2] = -0.4;
+      }
+
+      // Sleek cyan flow coloring for full laminar visualization
+      colors[i3] = 0.0;
+      colors[i3 + 1] = 0.82 + (Math.abs(cfd.vx) * 0.15); // Dynamic flow shading
+      colors[i3 + 2] = 1.0;
+    }
+
+    this.graphics.particles.geometry.attributes.position.needsUpdate = true;
+    this.graphics.particles.geometry.attributes.color.needsUpdate = true;
+  },
+
   updateFlowParticles(deltaTime) {
     if (!this.state.visualizeFlow) return;
 
@@ -772,10 +911,33 @@ const App = {
     const rpmNorm = this.state.rpm / 8000;
     const pitchRad = (this.state.pitch * Math.PI) / 180;
     const rotationalSpeed = (this.state.rpm * 2 * Math.PI) / 60; // rad/s
+    const isWater = this.state.fluid === 'water';
 
     // Accelerated jet properties
-    const inducedZ = 1.8 * rpmNorm * Math.sin(pitchRad);
+    const inducedZ = 1.8 * rpmNorm * Math.sin(pitchRad) * (this.state.diameter / 0.25);
     const slipstreamZ = this.state.inflow + inducedZ;
+
+    // Time variable for procedural fluid waves
+    const time = performance.now() * 0.001;
+
+    // Obstacle dimensions for deflection physics
+    const hasObstacle = this.state.obstacleType !== 'none';
+    const obsZ = 0.35; // Downstream center coordinate
+    let obsRadius = 0.0;
+    let obsCd = 0.0;
+
+    if (hasObstacle) {
+      if (this.state.obstacleType === 'sphere') {
+        obsRadius = 0.044; // 4.4cm sphere bounds
+        obsCd = 0.47;
+      } else if (this.state.obstacleType === 'airfoil') {
+        obsRadius = 0.026; // Elongated airfoil has lower deflection width
+        obsCd = 0.04;
+      } else if (this.state.obstacleType === 'custom') {
+        obsRadius = 0.048; // STL average radius
+        obsCd = 0.85;
+      }
+    }
 
     for (let i = 0; i < count; i++) {
       const i3 = i * 3;
@@ -792,8 +954,14 @@ const App = {
       if (pz >= -0.05 && pz <= 0.05) {
         // 1. Interactive Propeller Sweep Zone (Acceleration and Spin)
         if (r < maxR * 1.1) {
-          // Induced axial velocity boost
-          this.graphics.particleVelocities[i3 + 2] = slipstreamZ;
+          // Induced axial velocity boost, adjusting for viscid water momentum inertia
+          const targetZ = slipstreamZ;
+          if (isWater) {
+            // Viscid water particles accelerate slower due to mass/momentum
+            this.graphics.particleVelocities[i3 + 2] += (targetZ - this.graphics.particleVelocities[i3 + 2]) * deltaTime * 3.5;
+          } else {
+            this.graphics.particleVelocities[i3 + 2] = targetZ;
+          }
           
           // Induced angular velocity (swirl) in the rotation direction
           const swirlStrengh = rotationalSpeed * 0.15 * (1.0 - r / maxR);
@@ -809,18 +977,15 @@ const App = {
         
         if (this.state.propType === 'standard') {
           // --- STANDARD PROP: TURBULENT TIP VORTICES ---
-          // Tip vortex core follows a spiral helical trajectory trailing from blade tips
-          const age = pz * 10.0; // surrogate for time since passage
-          const vortexCoreR = maxR * (0.95 - 0.15 * pz); // Contractive wake
+          const age = pz * 10.0;
+          const vortexCoreR = maxR * (0.95 - 0.15 * pz);
           const helixTheta = (rotationalSpeed * pz * 0.03) + (pz * 2);
           
-          // Two vortex cores (Blade A and Blade B, 180 deg apart)
           const coreAx = vortexCoreR * Math.cos(helixTheta);
           const coreAy = vortexCoreR * Math.sin(helixTheta);
           const coreBx = vortexCoreR * Math.cos(helixTheta + Math.PI);
           const coreBy = vortexCoreR * Math.sin(helixTheta + Math.PI);
 
-          // Find if particle is close to either core
           const distA = Math.sqrt((px - coreAx)**2 + (py - coreAy)**2);
           const distB = Math.sqrt((px - coreBx)**2 + (py - coreBy)**2);
           const minDist = Math.min(distA, distB);
@@ -828,8 +993,6 @@ const App = {
           const nearestCoreY = distA < distB ? coreAy : coreBy;
 
           if (minDist < 0.04 && pz < 0.8) {
-            // Sucked into the high-vorticity core
-            // Spiraling tangential rotation + sutil radial expansion (turbulence)
             const dx = px - nearestCoreX;
             const dy = py - nearestCoreY;
             const dR = Math.sqrt(dx*dx + dy*dy) + 0.001;
@@ -842,11 +1005,10 @@ const App = {
             this.graphics.particleVelocities[i3 + 1] += (fy + dy*0.2) * deltaTime * 15;
 
             // Transition color to burning energy (hot orange/red tip vortex)
-            colors[i3] = 1.0;                     // R
-            colors[i3 + 1] = 0.3 + (dR/0.04)*0.4;  // G
-            colors[i3 + 2] = 0.0;                 // B
+            colors[i3] = 1.0;
+            colors[i3 + 1] = 0.3 + (dR/0.04)*0.4;
+            colors[i3 + 2] = 0.0;
           } else {
-            // Background flow color (Amber)
             colors[i3] = 0.95;
             colors[i3 + 1] = 0.55;
             colors[i3 + 2] = 0.1;
@@ -854,10 +1016,7 @@ const App = {
         } 
         else {
           // --- TOROIDAL PROP: LAMINAR CLOSED FLOW ---
-          // No aggressive tip vortex! The loop curls the tip vortices back into the stream.
-          // Wake contracts smoothly, and air/water flows in a clean laminar tubular stream.
           if (r > maxR * 0.9 && r < maxR * 1.15 && pz < 0.3) {
-            // Toroidal tip wrapping effect: particles are curled inwards gracefully
             const pullInForce = 0.4 * rpmNorm * deltaTime;
             this.graphics.particleVelocities[i3] -= (px / r) * pullInForce;
             this.graphics.particleVelocities[i3 + 1] -= (py / r) * pullInForce;
@@ -874,6 +1033,59 @@ const App = {
         this.graphics.particleVelocities[i3 + 1] *= 0.98;
       }
 
+      // --- NATURAL ORGANIC TURBULENCE (Wind vs Water Viscosity) ---
+      if (isWater) {
+        // VISCOUS WATER: Slow, swaying currents (low frequency, larger amplitude)
+        const swayFreq = 1.6;
+        const swayAmp = 0.06;
+        this.graphics.particleVelocities[i3] += Math.sin(time * swayFreq + i * 0.1) * swayAmp * deltaTime;
+        this.graphics.particleVelocities[i3 + 1] += Math.cos(time * swayFreq + i * 0.1) * swayAmp * deltaTime;
+      } else {
+        // COMPRESSIBLE WIND: Quick, chaotic drafts/gusts (high frequency, low amplitude)
+        const gustFreq = 7.5;
+        const gustAmp = 0.12 * rpmNorm;
+        this.graphics.particleVelocities[i3] += Math.sin(time * gustFreq + i * 0.5) * gustAmp * deltaTime;
+        this.graphics.particleVelocities[i3 + 1] += Math.cos(time * gustFreq + i * 0.5) * gustAmp * deltaTime;
+      }
+
+      // --- 3D OBSTACLE DEFLECTION & WAKE SHADOW PHYSICS ---
+      if (hasObstacle) {
+        const dx = px;
+        const dy = py;
+        const dz = pz - obsZ;
+        const distToObstacle = Math.sqrt(dx*dx + dy*dy + dz*dz);
+
+        if (distToObstacle < obsRadius + 0.006) {
+          // Collision: deflect particles out and around the 3D surface
+          const nx = dx / (distToObstacle + 0.001);
+          const ny = dy / (distToObstacle + 0.001);
+          const nz = dz / (distToObstacle + 0.001);
+
+          // Force position slide along shell
+          px = nx * (obsRadius + 0.006);
+          py = ny * (obsRadius + 0.006);
+          
+          // Deflect velocities radially outwards
+          const pushForce = 3.2 * (this.state.inflow + inducedZ) * deltaTime;
+          this.graphics.particleVelocities[i3] += nx * pushForce;
+          this.graphics.particleVelocities[i3 + 1] += ny * pushForce;
+          
+          // Technical deflection orange color indicator on surface impact
+          colors[i3] = 1.0;
+          colors[i3 + 1] = 0.25;
+          colors[i3 + 2] = 0.25;
+        } 
+        else if (pz > obsZ && Math.sqrt(px*px + py*py) < obsRadius * 1.5 && pz < obsZ + 0.3) {
+          // Downstream wake shadow: fluid slows down severely behind the object (drag)
+          this.graphics.particleVelocities[i3 + 2] *= 0.35; // Slow down flow
+          
+          // Color wake orange/gray to represent energy drop and drag turbulence
+          colors[i3] = 0.9;
+          colors[i3 + 1] = 0.3;
+          colors[i3 + 2] = 0.3;
+        }
+      }
+
       // Perform position update step
       px += this.graphics.particleVelocities[i3] * deltaTime;
       py += this.graphics.particleVelocities[i3 + 1] * deltaTime;
@@ -888,6 +1100,9 @@ const App = {
         this.resetParticle(i);
       }
     }
+
+    this.graphics.particles.geometry.attributes.position.needsUpdate = true;
+    this.graphics.particles.geometry.attributes.color.needsUpdate = true;
 
     this.graphics.particles.geometry.attributes.position.needsUpdate = true;
     this.graphics.particles.geometry.attributes.color.needsUpdate = true;
@@ -934,14 +1149,13 @@ const App = {
     const inflow = this.state.inflow;
     const isWater = this.state.fluid === 'water';
     const isToroidal = this.state.propType === 'toroidal';
+    const D = this.state.diameter;
 
     // 1. Densidad
     const rho = isWater ? this.state.waterDensity : this.state.airDensity;
     const n = rpm / 60; // rps
-    const D = this.state.diameter;
 
     // 2. Advance Ratio J
-    // J = V / (n * D)
     let J = 0;
     if (n > 0) {
       J = inflow / (n * D);
@@ -950,52 +1164,88 @@ const App = {
     const beta = (pitch * Math.PI) / 180; // Pitch angle in radians
 
     // 3. Aerodynamic Coefficients KT & KQ
-    // Based on experimental airfoil / closed loop geometry data
     let KT = 0;
     let KQ = 0;
 
     if (isToroidal) {
-      // Toroidal maintains higher KT at high J and suffers less drag at tip
       const baseKT = 0.44 * Math.sin(beta);
       KT = baseKT * (1.0 - 0.72 * J / Math.max(0.1, Math.tan(beta)));
       
+      // Aspect ratio correction: larger diameter reduces tip vortex effects even further
+      const aspectCorrection = 1.0 + 0.12 * (D - 0.25) / 0.25;
+      KT *= aspectCorrection;
+
       const inducedDrag = 0.038 * Math.sin(beta) * Math.sin(beta) * J;
       const profileDrag = 0.042 * Math.pow(Math.sin(beta), 1.6);
       KQ = (profileDrag + inducedDrag) * (1.0 - 0.45 * J / Math.max(0.1, Math.tan(beta))) + 0.0035;
     } else {
-      // Standard propeller tip vortex leakage lowers KT, and tip vortex induced drag increases KQ
       const baseKT = 0.37 * Math.sin(beta);
       KT = baseKT * (1.0 - 0.88 * J / Math.max(0.1, Math.tan(beta)));
 
-      // Tip vortex increases induced drag significantly
       const inducedDrag = 0.052 * Math.sin(beta) * Math.sin(beta) * J;
       const profileDrag = 0.054 * Math.pow(Math.sin(beta), 1.6);
-      KQ = (profileDrag + inducedDrag) * (1.0 - 0.55 * J / Math.max(0.1, Math.tan(beta))) + 0.007; // higher torque constant
+      KQ = (profileDrag + inducedDrag) * (1.0 - 0.55 * J / Math.max(0.1, Math.tan(beta))) + 0.007;
     }
 
-    // Clamp coefficients to physical limits
     KT = Math.max(0, KT);
     KQ = Math.max(0.001, KQ);
 
     // 4. Output Force & Moments
-    // Thrust T = KT * rho * n^2 * D^4
+    // Thrust T = KT * rho * n^2 * D^4 (proportional to diameter^4!)
     const thrust = KT * rho * Math.pow(n, 2) * Math.pow(D, 4);
 
-    // Torque Q = KQ * rho * n^2 * D^5
+    // Torque Q = KQ * rho * n^2 * D^5 (proportional to diameter^5!)
     const torque = KQ * rho * Math.pow(n, 2) * Math.pow(D, 5);
 
     // Power P = 2*pi * n * Q
     const power = 2 * Math.PI * n * torque;
 
     // Efficiency eta = J * KT / (2 * pi * KQ)
+    // Larger diameters are more efficient at low RPM due to sweep volume
     let efficiency = 0;
     if (KQ > 0 && J > 0) {
       efficiency = (J * KT) / (2 * Math.PI * KQ) * 100;
     }
     
+    // Scale efficiency with diameter ratio
+    const dScaleBonus = 1.0 + 0.05 * (D - 0.25) / 0.25;
+    efficiency *= dScaleBonus;
+    
     // Clamp efficiency
-    efficiency = Math.min(Math.max(0, efficiency), 86.4);
+    efficiency = Math.min(Math.max(0, efficiency), 88.2);
     if (thrust === 0) efficiency = 0;
+
+    // --- DRAG FORCE CALCULATIONS FOR OBSTACLES (Phase 4) ---
+    let dragCd = 0.0;
+    let dragFd = 0.0;
+
+    if (this.state.obstacleType !== 'none') {
+      let area = 0.0; // frontal cross section area
+      if (this.state.obstacleType === 'sphere') {
+        dragCd = 0.47;
+        area = Math.PI * Math.pow(0.04, 2); // 4cm radius
+      } else if (this.state.obstacleType === 'airfoil') {
+        dragCd = 0.04;
+        area = Math.PI * 0.04 * 0.022; // streamlined airfoil
+      } else if (this.state.obstacleType === 'custom') {
+        dragCd = 0.85;
+        area = Math.PI * Math.pow(0.045, 2); // custom average size
+      }
+      
+      // Flow jet velocity hitting the obstacle Z downstream
+      const inducedZ = 1.8 * (rpm / 8000) * Math.sin(beta) * (D / 0.25);
+      const vJet = inflow + inducedZ;
+      
+      // Fd = 0.5 * rho * V^2 * Cd * Area
+      dragFd = 0.5 * rho * Math.pow(vJet, 2) * dragCd * area;
+    }
+
+    this.state.dragCd = dragCd;
+    this.state.dragFd = dragFd;
+
+    // Update drag telemetry readouts
+    document.getElementById('detail-fd').innerText = `${dragFd.toFixed(2)} N`;
+    document.getElementById('detail-cd').innerText = dragCd.toFixed(2);
 
     // --- ACCURACY REYNOLDS NUMBER ---
     // Re = (rho * V_chord * Chord) / DynamicViscosity

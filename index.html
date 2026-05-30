@@ -68,6 +68,14 @@
       </div>
 
       <div class="control-group">
+        <div class="control-label-row">
+          <span>Diámetro de Hélice</span>
+          <span id="diameter-val" class="control-value">0.25 m</span>
+        </div>
+        <input type="range" id="diameter-slider" min="0.15" max="0.60" step="0.01" value="0.25">
+      </div>
+
+      <div class="control-group">
         <h2 class="panel-section-title">Medio de Interacción</h2>
         <div class="fluid-switch">
           <div class="switch-option active" data-fluid="air">Aire (Drones/Fans)</div>
@@ -84,6 +92,27 @@
             <button class="btn-secondary" id="btn-toggle-physics" style="padding: 6px 0; font-size: 0.75rem; border-color: rgba(255,255,255,0.05); color: var(--color-text-muted);" disabled>CFD Local</button>
           </div>
           <div id="cfd-status" style="font-size: 0.72rem; color: var(--color-text-muted); text-align: center; margin-top: 2px;">Modo: Procedimental</div>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <h2 class="panel-section-title">Túnel de Viento: Obstáculo 3D</h2>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <div class="fluid-switch" style="grid-template-columns: repeat(4, 1fr); padding: 2px;">
+            <div class="switch-option active" style="font-size: 0.72rem; padding: 6px 2px;" data-obstacle="none">Ninguno</div>
+            <div class="switch-option" style="font-size: 0.72rem; padding: 6px 2px;" data-obstacle="sphere">Esfera</div>
+            <div class="switch-option" style="font-size: 0.72rem; padding: 6px 2px;" data-obstacle="airfoil">Perfil</div>
+            <div class="switch-option" style="font-size: 0.72rem; padding: 6px 2px;" data-obstacle="custom">STL</div>
+          </div>
+          
+          <!-- Hidden file input for custom STL/OBJ files -->
+          <input type="file" id="stl-file-input" accept=".stl,.obj" style="display: none;" class="interactive">
+          
+          <button class="btn-secondary" id="btn-upload-stl" style="display: none; padding: 6px 0; font-size: 0.75rem; border-style: dashed; border-color: var(--accent-active);">
+            📁 Cargar Archivo .STL
+          </button>
+          
+          <div id="stl-file-name" style="display: none; font-size: 0.72rem; color: var(--accent-efficiency); text-align: center;">Ninguno cargado</div>
         </div>
       </div>
 
@@ -181,6 +210,18 @@
         <div class="detail-row">
           <span>Ahorro Energético Est.</span>
           <span id="detail-savings" style="color: var(--accent-efficiency); font-weight: 700;">21.6%</span>
+        </div>
+        <div class="detail-row">
+          <span>Objeto en Túnel</span>
+          <span id="detail-obstacle">Ninguno</span>
+        </div>
+        <div class="detail-row">
+          <span>Arrastre en Túnel (Fd)</span>
+          <span id="detail-fd" style="color: var(--accent-standard); font-weight: 600;">0.0 N</span>
+        </div>
+        <div class="detail-row">
+          <span>Coef. de Arrastre (Cd)</span>
+          <span id="detail-cd" style="color: var(--accent-standard); font-weight: 600;">0.00</span>
         </div>
       </div>
 
